@@ -3,6 +3,7 @@
 import json
 import shutil
 from pathlib import Path
+from unittest.mock import patch
 
 import pytest
 
@@ -205,3 +206,75 @@ class TestMergeDirectories:
         merge_directories(common, os_dir, dest)
 
         assert dest.exists()
+
+
+# ---------------------------------------------------------------------------
+# Overwrite confirmation behaviour
+# ---------------------------------------------------------------------------
+
+
+class TestOverwriteConfirmation:
+    def test_identical_content_no_prompt(self, repo, monkeypatch):
+        """Dest file with identical content is silently skipped — input() never called."""
+        _, common, _, dest = repo
+        content = '{"a": 1}'
+        (common / "file.json").write_text(content, encoding="utf-8")
+        dest.mkdir()
+        (dest / "file.json").write_text(content, encoding="utf-8")
+
+        monkeypatch.setattr("builtins.input", lambda _: pytest.fail("input() must not be called for identical content"))
+
+        merge_directories(common, None, dest)
+
+    def test_different_content_yes_flag_overwrites(self, repo):
+        """--yes overwrites existing files with different content without prompting."""
+        _, common, _, dest = repo
+        (common / "settings.json").write_text('{"a": 1}', encoding="utf-8")
+        dest.mkdir()
+        (dest / "settings.json").write_text('{"a": 999}', encoding="utf-8")
+
+        merge_directories(common, None, dest, yes=True)
+
+        result = json.loads((dest / "settings.json").read_text(encoding="utf-8"))
+        assert result == {"a": 1}
+
+    def test_different_content_user_confirms(self, repo, monkeypatch):
+        """When user enters 'y', existing file with different content is overwritten."""
+        _, common, _, dest = repo
+        (common / "settings.json").write_text('{"a": 1}', encoding="utf-8")
+        dest.mkdir()
+        (dest / "settings.json").write_text('{"a": 999}', encoding="utf-8")
+
+        monkeypatch.setattr("builtins.input", lambda _: "y")
+
+        merge_directories(common, None, dest)
+
+        result = json.loads((dest / "settings.json").read_text(encoding="utf-8"))
+        assert result == {"a": 1}
+
+    def test_different_content_user_declines(self, repo, monkeypatch):
+        """When user enters 'n', existing file with different content is preserved."""
+        _, common, _, dest = repo
+        (common / "settings.json").write_text('{"a": 1}', encoding="utf-8")
+        dest.mkdir()
+        (dest / "settings.json").write_text('{"a": 999}', encoding="utf-8")
+
+        monkeypatch.setattr("builtins.input", lambda _: "n")
+
+        merge_directories(common, None, dest)
+
+        result = json.loads((dest / "settings.json").read_text(encoding="utf-8"))
+        assert result == {"a": 999}
+
+    def test_new_file_no_prompt(self, repo, monkeypatch):
+        """Files not yet in dest are written directly without prompting."""
+        _, common, _, dest = repo
+        (common / "new.json").write_text('{"x": 1}', encoding="utf-8")
+        dest.mkdir()
+
+        monkeypatch.setattr("builtins.input", lambda _: pytest.fail("input() must not be called for new files"))
+
+        merge_directories(common, None, dest)
+
+        result = json.loads((dest / "new.json").read_text(encoding="utf-8"))
+        assert result == {"x": 1}

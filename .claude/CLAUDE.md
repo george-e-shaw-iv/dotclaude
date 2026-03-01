@@ -19,7 +19,7 @@ a destination (default: `~/.claude` / `%USERPROFILE%\.claude`).
 uv run merge.py [--dest PATH] [--os windows|mac|linux|unix] [--dry-run]
 ```
 
-**Tests:** `uv run pytest` — 22 tests in `tests/test_merge.py`
+**Tests:** `uv run pytest` — 27 tests in `tests/test_merge.py`
 
 **Adding a new OS:** Create a new directory (e.g., `mac/`, `linux/`, `unix/`) at the repo root. `detect_os_dir()` in
 `merge.py` handles `Windows`, `Darwin`, and Linux automatically, with a `unix/` fallback.

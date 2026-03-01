@@ -2,6 +2,7 @@
 """Merges common/ and an OS-specific directory into a destination ~/.claude directory."""
 
 import argparse
+import difflib
 import json
 import os
 import platform
@@ -59,7 +60,63 @@ def merge_text(common_content: str, os_content: str) -> str:
     return common_content + os_content
 
 
-def merge_directories(common_dir: Path, os_dir: Path | None, dest_dir: Path) -> None:
+def _unified_diff(path: Path, old: str, new: str) -> str:
+    """Return a unified diff string between old and new content."""
+    lines = list(
+        difflib.unified_diff(
+            old.splitlines(keepends=True),
+            new.splitlines(keepends=True),
+            fromfile=f"existing/{path}",
+            tofile=f"new/{path}",
+        )
+    )
+    return "".join(lines)
+
+
+def _confirm_overwrite(dest_file: Path, new_text: str) -> bool:
+    """Show a diff and prompt the user to confirm overwriting dest_file.
+
+    Returns True if the write should proceed, False to skip.
+    Skips the prompt silently if content is identical.
+    """
+    existing = dest_file.read_text(encoding="utf-8")
+    if existing == new_text:
+        return True  # identical — skip silently
+
+    diff = _unified_diff(dest_file, existing, new_text)
+    print(f"\n{diff}", end="")
+    while True:
+        answer = input(f"Overwrite {dest_file}? [y/N] ").strip().lower()
+        if answer in ("y", "yes"):
+            return True
+        if answer in ("n", "no", ""):
+            return False
+
+
+def _write_with_confirm(dest_file: Path, content: str, yes: bool) -> None:
+    """Write text content to dest_file, prompting if it already exists with different content."""
+    if dest_file.exists() and not yes:
+        if not _confirm_overwrite(dest_file, content):
+            return
+    dest_file.write_text(content, encoding="utf-8")
+
+
+def _copy_with_confirm(src: Path, dest_file: Path, yes: bool) -> None:
+    """Copy src to dest_file, prompting if dest already exists with different content."""
+    if dest_file.exists() and not yes:
+        try:
+            new_text = src.read_text(encoding="utf-8")
+            if not _confirm_overwrite(dest_file, new_text):
+                return
+        except UnicodeDecodeError:
+            # Binary file — prompt without a diff
+            answer = input(f"Binary file {dest_file} exists. Overwrite? [y/N] ").strip().lower()
+            if answer not in ("y", "yes"):
+                return
+    shutil.copy2(src, dest_file)
+
+
+def merge_directories(common_dir: Path, os_dir: Path | None, dest_dir: Path, yes: bool = False) -> None:
     """Merge common_dir and os_dir into dest_dir."""
     dest_dir.mkdir(parents=True, exist_ok=True)
 
@@ -86,22 +143,23 @@ def merge_directories(common_dir: Path, os_dir: Path | None, dest_dir: Path) -> 
                 common_data = json.loads(common_file.read_text(encoding="utf-8"))
                 os_data = json.loads(os_file.read_text(encoding="utf-8"))
                 merged = deep_merge_json(common_data, os_data)
-                dest_file.write_text(
+                _write_with_confirm(
+                    dest_file,
                     json.dumps(merged, indent=2, ensure_ascii=False) + "\n",
-                    encoding="utf-8",
+                    yes,
                 )
             elif suffix in (".md", ".txt"):
                 common_content = common_file.read_text(encoding="utf-8")
                 os_content = os_file.read_text(encoding="utf-8")
-                dest_file.write_text(merge_text(common_content, os_content), encoding="utf-8")
+                _write_with_confirm(dest_file, merge_text(common_content, os_content), yes)
             else:
                 # OS wins for unrecognized types
-                shutil.copy2(os_file, dest_file)
+                _copy_with_confirm(os_file, dest_file, yes)
 
         elif in_os:
-            shutil.copy2(os_dir / rel_path, dest_file)  # type: ignore[operator]
+            _copy_with_confirm(os_dir / rel_path, dest_file, yes)  # type: ignore[operator]
         else:
-            shutil.copy2(common_dir / rel_path, dest_file)
+            _copy_with_confirm(common_dir / rel_path, dest_file, yes)
 
 
 def default_dest() -> Path:
@@ -137,6 +195,12 @@ def main(argv: list[str] | None = None) -> None:
         action="store_true",
         help="Print what would happen without writing any files",
     )
+    parser.add_argument(
+        "--yes",
+        "-y",
+        action="store_true",
+        help="Overwrite existing files without prompting",
+    )
     args = parser.parse_args(argv)
 
     common_dir = repo_root / "common"
@@ -160,7 +224,7 @@ def main(argv: list[str] | None = None) -> None:
         print(f"  dest    : {args.dest}")
         return
 
-    merge_directories(common_dir, os_dir, args.dest)
+    merge_directories(common_dir, os_dir, args.dest, yes=args.yes)
     print(f"Merged into {args.dest}")
 
 
