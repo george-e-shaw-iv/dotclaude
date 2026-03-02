@@ -1,0 +1,1 @@
+You're currently running on Windows Subsystem for Linux (WSL) version 2, with WSLg installed and enabled.

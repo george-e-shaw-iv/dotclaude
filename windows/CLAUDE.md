@@ -1,0 +1,1 @@
+You're currently running on a Windows machine within a Powershell 7 terminal.
