@@ -18,6 +18,8 @@ def detect_os_dir(repo_root: Path) -> Path:
         candidate = repo_root / "windows"
     elif system == "Darwin":
         candidate = repo_root / "mac"
+    elif system == "wsl":
+        candidate = repo_root / "wsl"
     else:
         candidate = repo_root / "linux"
 
@@ -186,7 +188,7 @@ def main(argv: list[str] | None = None) -> None:
     parser.add_argument(
         "--os",
         dest="os_name",
-        choices=["windows", "mac", "linux", "unix"],
+        choices=["windows", "mac", "linux", "unix", "wsl"],
         default=None,
         help="Override OS detection",
     )
